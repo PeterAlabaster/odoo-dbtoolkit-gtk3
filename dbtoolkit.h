@@ -19,6 +19,7 @@ class DbToolkit : public Gtk::Window {
     auto execute_query(Glib::ustring db, Glib::ustring query,
                        bool transactional);
     void clear_output();
+    void set_output_to(Glib::ustring value);
     // Button click handlers
     // ROADMAP: Add db `_bak` restorer
     void on_btn_clearoutput_clicked();

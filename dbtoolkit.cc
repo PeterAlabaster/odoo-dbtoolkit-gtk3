@@ -107,7 +107,7 @@ DbToolkit::~DbToolkit() {}
 
 auto DbToolkit::execute_query(Glib::ustring db, Glib::ustring query,
                               bool transactional) {
-    list<string> result_list;
+    string result_str;
     try {
         connection C("dbname = " + db + " user = " + pg_user + " password = " +
                      pg_pass + " hostaddr = " + pg_host + " port = " + pg_port);
@@ -123,100 +123,106 @@ auto DbToolkit::execute_query(Glib::ustring db, Glib::ustring query,
             cout << "Executed and committed transactional query: " << query
                  << endl;
             C.disconnect();
-            // TODO: Any way to check result like UPDATE 1?
-            return result_list;
+            result_str = "Succesfully ran " + query;
+            return result_str;
         } else {  // SELECT (or database creation/drop)
             nontransaction N(C);
             result R(N.exec(query));
             cout << "Executed non-transactional query: " << query << endl;
             // Convert to array
             for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
-                string list_entry;
+                const int width = 80;
+                string line_entry;
                 for (auto i : c) {
                     // TODO: Fix spacing for longer / shorter lines, gets offset
                     // Also keep in mind we don't want trailing space added
-                    list_entry += i.as<string>();
+                    line_entry += i.as<string>();
                 }
-                result_list.push_back(list_entry);
+                result_str += line_entry + "\r\n";
             }
             C.disconnect();
-            return result_list;
+            return result_str;
         }
     } catch (const sql_error& e) {
         cerr << "SQL error: " << e.what() << endl;
-        return result_list;
+        result_str = e.what();
+        return result_str;
     } catch (const exception& e) {
         cerr << e.what() << endl;
-        // Satisfy non-void function
-        return result_list;
+        result_str = e.what();
+        return result_str;
     }
 }
 
 void DbToolkit::clear_output() { output.get_buffer()->set_text(""); }
 
+void DbToolkit::set_output_to(Glib::ustring value) {
+    this->clear_output();
+    auto refBuffer = output.get_buffer();
+    auto iter = refBuffer->get_iter_at_offset(0);
+    refBuffer->insert(iter, value + "\r\n");
+}
+
 void DbToolkit::on_btn_clearoutput_clicked() { this->clear_output(); }
 void DbToolkit::on_btn_updatedblist_clicked() {
     // Use postgres database for this step, as we can rely on it existing.
-    list<string> result = this->execute_query(
+    string result = this->execute_query(
         "postgres", "SELECT datname FROM pg_database ORDER BY datname;", false);
     // Clear and re-populate db_selector
     db_selector.remove_all();
-    for (auto i : result) {
-        db_selector.append(i);
+    istringstream iss(result);
+    for (string line; getline(iss, line);) {
+        // Remove newlines.
+        line.erase(line.length() - 1);
+        db_selector.append(line);
     }
 }
 void DbToolkit::on_btn_setpasswords_clicked() {
-    this->execute_query(db_selector.get_active_text(),
-                        "UPDATE res_users SET password='admin'", true);
+    string result =
+        this->execute_query(db_selector.get_active_text(),
+                            "UPDATE res_users SET password='admin'", true);
+    this->set_output_to(result);
 }
 void DbToolkit::on_btn_disablecron_clicked() {
-    this->execute_query(db_selector.get_active_text(),
-                        "UPDATE ir_cron SET active=false WHERE active=true",
-                        true);
+    string result = this->execute_query(
+        db_selector.get_active_text(),
+        "UPDATE ir_cron SET active=false WHERE active=true", true);
+    this->set_output_to(result);
 }
 void DbToolkit::on_btn_getextid_clicked() {
     string db = db_selector.get_active_text();
     string model = extid_model_entry.get_text();
     string id = extid_id_entry.get_text();
-    list<string> result = this->execute_query(
+    string result = this->execute_query(
         db,
         "SELECT CONCAT(module, '.', name) AS external_id FROM "
         "ir_model_data WHERE res_id=" +
             id + " AND model='" + model + "'",
         false);
-    this->clear_output();
-    auto refBuffer = output.get_buffer();
-    auto iter = refBuffer->get_iter_at_offset(0);
-    for (auto i : result) {
-        iter = refBuffer->insert(iter, i + "\r\n");
-    }
+    this->set_output_to(result);
 }
 void DbToolkit::on_btn_getfields_clicked() {
     string db = db_selector.get_active_text();
     string model = fields_model_entry.get_text();
     // ROADMAP: Make this show more useful info
-    list<string> result = this->execute_query(
+    string result = this->execute_query(
         db,
         "SELECT name, ttype, field_description FROM ir_model_fields WHERE "
         "model_id IN (SELECT id FROM ir_model WHERE model='" +
             model + "')",
         false);
-    this->clear_output();
-    auto refBuffer = output.get_buffer();
-    auto iter = refBuffer->get_iter_at_offset(0);
-    for (auto i : result) {
-        iter = refBuffer->insert(iter, i + "\r\n");
-    }
+    this->set_output_to(result);
 }
 void DbToolkit::on_btn_bak_db_clicked() {
     // ROADMAP: Kick all sessions first
     // Use postgres database, put db_selector db in query
     string db = db_selector.get_active_text();
     int active = db_selector.get_active_row_number();
-    this->execute_query("postgres",
-                        "CREATE DATABASE " + db + "_bak WITH TEMPLATE " + db,
-                        false);
+    string result = this->execute_query(
+        "postgres", "CREATE DATABASE " + db + "_bak WITH TEMPLATE " + db,
+        false);
     this->on_btn_updatedblist_clicked();
+    this->set_output_to(result);
     // Set the db selector back to the db we initially had
     // NB: Potentially could lead to mis-setting due to the list changing,
     // but it seems to work fine as the _bak suffixed always ends up later
@@ -227,6 +233,8 @@ void DbToolkit::on_btn_drop_db_clicked() {
     // ROADMAP: Kick all sessions first
     // Use postgres database, put db_selector db in query
     string db = db_selector.get_active_text();
-    this->execute_query("postgres", "DROP DATABASE " + db, false);
+    string result =
+        this->execute_query("postgres", "DROP DATABASE " + db, false);
     this->on_btn_updatedblist_clicked();
+    this->set_output_to(result);
 }

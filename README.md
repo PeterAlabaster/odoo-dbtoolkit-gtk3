@@ -3,6 +3,8 @@ GTK3 UI, helper for common odoo db commands written in C++
 
 Uses `gtkmm` for gtk api, `pqxx` to interface with postgresql, `cpptoml` to parse configuration file.
 
+Intended as a successor to [odoo-dbtoolkit](https://github.com/PeterAlabaster/odoo-dbtoolkit) (written in Godot engine) to address some of the cavetas
+
 First C++ endeavour.
 ## Dependencies
 ### Compiling on debian base
@@ -37,6 +39,8 @@ port = "5436"  # "5432"
 - Database template backup - create a `_bak` suffixed database using the currently selected database as a template
 - Database dropper - drop a database
 
+## Screenshot
+![preview-of-toolkit](./screenshot.png)
 ## Roadmap
 - Some gtk tidyup, output is scuffed when we have multiple columns, and has no scrollbar.
 - Some code tidyup, get rid of globals
@@ -44,7 +48,6 @@ port = "5436"  # "5432"
 - Db drop/backup buttons should try to kick all active postgres sessions on the db
 - Add db `_bak` restorer, which drops the non `_bak` suffixed database, then creates it again using the `_bak` suffixed database
 - Extend field getter to show more useful information
-- Add compiled binary to releases
 
 ## References
 - https://docs.huihoo.com/gtkmm/programming-with-gtkmm-3/3.4.1/en
