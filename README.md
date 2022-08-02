@@ -38,15 +38,14 @@ port = "5436"  # "5432"
 - Field getter - give a model `_name` and get all columns available on the model
 - Database template backup - create a `_bak` suffixed database using the currently selected database as a template
 - Database dropper - drop a database
+- Database backup restorer - if the `_bak` suffixed, or non suffixed (but a `_bak` suffixed db exists) db is selected, drop the non-suffixed db, and re-create it with the backup as a template
 
 ## Screenshot
 ![preview-of-toolkit](./screenshot.png)
 ## Roadmap
-- Some gtk tidyup, output is scuffed when we have multiple columns, and has no scrollbar.
-- Some code tidyup, get rid of globals
+- Some gtk output tidyup, output is scuffed when we have multiple columns, and has no scrollbar.
 - Secure password storage in `~/.dbtoolkit.toml`?
 - Db drop/backup buttons should try to kick all active postgres sessions on the db
-- Add db `_bak` restorer, which drops the non `_bak` suffixed database, then creates it again using the `_bak` suffixed database
 - Extend field getter to show more useful information
 
 ## References

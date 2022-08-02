@@ -10,22 +10,6 @@
 using namespace std;
 using namespace pqxx;
 
-// GLOBALS
-// Parse ~/.dbtoolkit.toml
-// TODO: Can add these to header to make them accessible globally instead of
-// this?
-// ROADMAP: Secure password storage
-const char* homedir = getenv("HOME");
-auto config = cpptoml::parse_file(string(homedir) + "/.dbtoolkit.toml");
-auto pg_user =
-    config->get_qualified_as<string>("postgresql.user").value_or("postgres");
-auto pg_pass =
-    config->get_qualified_as<string>("postgresql.password").value_or("admin");
-auto pg_host =
-    config->get_qualified_as<string>("postgresql.host").value_or("127.0.0.1");
-auto pg_port =
-    config->get_qualified_as<string>("postgresql.port").value_or("5432");
-
 DbToolkit::DbToolkit()
     : vbox(Gtk::ORIENTATION_VERTICAL, 5),
       hbox_extid(Gtk::ORIENTATION_HORIZONTAL, 5),
@@ -38,11 +22,24 @@ DbToolkit::DbToolkit()
       btn_disablecron("Disable CRONs"),
       btn_bak_db("Create _bak suffixed Database"),
       btn_drop_db("Drop Database"),
+      btn_restore_db("Drop, then restore _bak db"),
       btn_getextid("Get External ID"),
       btn_getfields("Get Fields") {
     // High level window settings
     set_title("DBToolkit");
     set_border_width(10);
+    // TOML Configuration parse (~/.dbtoolkit.toml)
+    // ROADMAP: Secure password storage
+    homedir = getenv("HOME");
+    config = cpptoml::parse_file(string(homedir) + "/.dbtoolkit.toml");
+    pg_user = config->get_qualified_as<string>("postgresql.user")
+                  .value_or("postgres");
+    pg_pass = config->get_qualified_as<string>("postgresql.password")
+                  .value_or("admin");
+    pg_host = config->get_qualified_as<string>("postgresql.host")
+                  .value_or("127.0.0.1");
+    pg_port =
+        config->get_qualified_as<string>("postgresql.port").value_or("5432");
     // Add the main vbox which everything will sit in
     add(vbox);
     // Add hboxes
@@ -62,6 +59,8 @@ DbToolkit::DbToolkit()
         sigc::mem_fun(*this, &DbToolkit::on_btn_bak_db_clicked));
     btn_drop_db.signal_clicked().connect(
         sigc::mem_fun(*this, &DbToolkit::on_btn_drop_db_clicked));
+    btn_restore_db.signal_clicked().connect(
+        sigc::mem_fun(*this, &DbToolkit::on_btn_restoredb_clicked));
     btn_getextid.signal_clicked().connect(
         sigc::mem_fun(*this, &DbToolkit::on_btn_getextid_clicked));
     btn_getfields.signal_clicked().connect(
@@ -94,8 +93,9 @@ DbToolkit::DbToolkit()
     vbox.pack_start(hbox_fields);
     vbox.pack_start(btn_bak_db);
     vbox.pack_start(btn_drop_db);
+    vbox.pack_start(btn_restore_db);
     vbox.pack_start(hbox_output_header);
-    // TODO: Set min value to trigger scroll? Instead of expanding window
+    // ROADMAP: Set min value to trigger scroll? Instead of expanding window
     vbox.pack_start(output);
     // Show everything
     show_all_children();
@@ -106,7 +106,7 @@ DbToolkit::DbToolkit()
 DbToolkit::~DbToolkit() {}
 
 auto DbToolkit::execute_query(Glib::ustring db, Glib::ustring query,
-                              bool transactional) {
+                              bool transactional, bool single_column) {
     string result_str;
     try {
         connection C("dbname = " + db + " user = " + pg_user + " password = " +
@@ -129,16 +129,22 @@ auto DbToolkit::execute_query(Glib::ustring db, Glib::ustring query,
             nontransaction N(C);
             result R(N.exec(query));
             cout << "Executed non-transactional query: " << query << endl;
-            // Convert to array
-            for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
-                const int width = 80;
-                string line_entry;
-                for (auto i : c) {
-                    // TODO: Fix spacing for longer / shorter lines, gets offset
-                    // Also keep in mind we don't want trailing space added
-                    line_entry += i.as<string>();
+            if (single_column) {  // For db list, or extid
+                for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
+                    string line_entry;
+                    for (auto i : c) {
+                        line_entry += i.as<string>();
+                    }
+                    result_str += line_entry + "\r\n";
                 }
-                result_str += line_entry + "\r\n";
+            } else {  // ROADMAP Pad stuff so it is easy to read in the output
+                for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
+                    string line_entry;
+                    for (auto i : c) {
+                        line_entry += i.as<string>();
+                    }
+                    result_str += line_entry + "\r\n";
+                }
             }
             C.disconnect();
             return result_str;
@@ -160,33 +166,36 @@ void DbToolkit::set_output_to(Glib::ustring value) {
     this->clear_output();
     auto refBuffer = output.get_buffer();
     auto iter = refBuffer->get_iter_at_offset(0);
-    refBuffer->insert(iter, value + "\r\n");
+    refBuffer->insert(iter, value);
 }
 
 void DbToolkit::on_btn_clearoutput_clicked() { this->clear_output(); }
 void DbToolkit::on_btn_updatedblist_clicked() {
     // Use postgres database for this step, as we can rely on it existing.
     string result = this->execute_query(
-        "postgres", "SELECT datname FROM pg_database ORDER BY datname;", false);
-    // Clear and re-populate db_selector
+        "postgres", "SELECT datname FROM pg_database ORDER BY datname;", false,
+        true);
+    // Clear and re-populate db_selector, and db_array
     db_selector.remove_all();
+    db_array.clear();
     istringstream iss(result);
     for (string line; getline(iss, line);) {
         // Remove newlines.
         line.erase(line.length() - 1);
+        db_array.push_back(line);
         db_selector.append(line);
     }
 }
 void DbToolkit::on_btn_setpasswords_clicked() {
-    string result =
-        this->execute_query(db_selector.get_active_text(),
-                            "UPDATE res_users SET password='admin'", true);
+    string result = this->execute_query(db_selector.get_active_text(),
+                                        "UPDATE res_users SET password='admin'",
+                                        true, false);
     this->set_output_to(result);
 }
 void DbToolkit::on_btn_disablecron_clicked() {
     string result = this->execute_query(
         db_selector.get_active_text(),
-        "UPDATE ir_cron SET active=false WHERE active=true", true);
+        "UPDATE ir_cron SET active=false WHERE active=true", true, false);
     this->set_output_to(result);
 }
 void DbToolkit::on_btn_getextid_clicked() {
@@ -198,7 +207,7 @@ void DbToolkit::on_btn_getextid_clicked() {
         "SELECT CONCAT(module, '.', name) AS external_id FROM "
         "ir_model_data WHERE res_id=" +
             id + " AND model='" + model + "'",
-        false);
+        false, false);
     this->set_output_to(result);
 }
 void DbToolkit::on_btn_getfields_clicked() {
@@ -210,7 +219,7 @@ void DbToolkit::on_btn_getfields_clicked() {
         "SELECT name, ttype, field_description FROM ir_model_fields WHERE "
         "model_id IN (SELECT id FROM ir_model WHERE model='" +
             model + "')",
-        false);
+        false, false);
     this->set_output_to(result);
 }
 void DbToolkit::on_btn_bak_db_clicked() {
@@ -219,7 +228,7 @@ void DbToolkit::on_btn_bak_db_clicked() {
     string db = db_selector.get_active_text();
     int active = db_selector.get_active_row_number();
     string result = this->execute_query(
-        "postgres", "CREATE DATABASE " + db + "_bak WITH TEMPLATE " + db,
+        "postgres", "CREATE DATABASE " + db + "_bak WITH TEMPLATE " + db, false,
         false);
     this->on_btn_updatedblist_clicked();
     this->set_output_to(result);
@@ -234,7 +243,61 @@ void DbToolkit::on_btn_drop_db_clicked() {
     // Use postgres database, put db_selector db in query
     string db = db_selector.get_active_text();
     string result =
-        this->execute_query("postgres", "DROP DATABASE " + db, false);
+        this->execute_query("postgres", "DROP DATABASE " + db, false, false);
     this->on_btn_updatedblist_clicked();
     this->set_output_to(result);
+}
+
+void DbToolkit::on_btn_restoredb_clicked() {
+    string db = db_selector.get_active_text();
+    string suffix = "_bak";
+    int active = db_selector.get_active_row_number();
+    // FIXME: Don't need both bools and strings, just need strings
+    // but not sure what truthy check looks like
+    string target_db_to_drop;
+    string target_db_to_restore;
+    bool has_bak = false;
+    bool has_orig = false;
+    string result;
+    bool has_suffix_bak =
+        db.size() >= suffix.size() &&
+        db.compare(db.size() - suffix.size(), suffix.size(), suffix) == 0;
+    if (has_suffix_bak == true) {
+        target_db_to_restore = db;
+        target_db_to_drop = db.erase(db.length() - 4);
+        has_bak = true;
+        for (auto i : db_array) {
+            if (i == target_db_to_drop) {
+                has_orig = true;
+            }
+        }
+    } else {  // Find if we have a _bak suffixed db in db_array
+        target_db_to_drop = db;
+        for (auto i : db_array) {
+            if (i == db + "_bak") {
+                target_db_to_restore = i;
+                has_orig = true;
+                has_bak = true;
+            }
+        }
+    }
+    if (has_bak == true && has_orig == true) {
+        // Execute the drop &  restore.
+        this->set_output_to("Dropping " + target_db_to_drop +
+                            "\r\n& Restoring " + target_db_to_restore + "...");
+        this->execute_query("postgres", "DROP DATABASE " + target_db_to_drop,
+                            false, false);
+        this->execute_query("postgres",
+                            "CREATE DATABASE " + target_db_to_drop +
+                                " WITH TEMPLATE " + target_db_to_restore,
+                            false, false);
+        this->on_btn_updatedblist_clicked();
+        this->set_output_to("Finished");
+        db_selector.set_active(active);
+    } else {
+        this->set_output_to(
+            "Could not determine both a _bak suffixed database, and a non-_bak "
+            "\r\n"
+            "suffixed database. Doing nothing");
+    }
 }
