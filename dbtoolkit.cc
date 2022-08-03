@@ -265,37 +265,32 @@ void DbToolkit::on_btn_restoredb_clicked() {
     string db = db_selector.get_active_text();
     string suffix = "_bak";
     int active = db_selector.get_active_row_number();
-    // FIXME: Don't need both bools and strings, just need strings
-    // but not sure what truthy check looks like
     string target_db_to_drop;
     string target_db_to_restore;
-    bool has_bak = false;
-    bool has_orig = false;
     string result;
     bool has_suffix_bak =
         db.size() >= suffix.size() &&
         db.compare(db.size() - suffix.size(), suffix.size(), suffix) == 0;
     if (has_suffix_bak == true) {
+        // Find if we have a non-_bak suffixed db in db_array
         target_db_to_restore = db;
-        target_db_to_drop = db.erase(db.length() - 4);
-        has_bak = true;
+        string stripped = db.erase(db.length() - 4);
         for (auto i : db_array) {
-            if (i == target_db_to_drop) {
-                has_orig = true;
+            if (i == stripped) {
+                target_db_to_drop = i;
             }
         }
-    } else {  // Find if we have a _bak suffixed db in db_array
+    } else {
+        // Find if we have a _bak suffixed db in db_array
         target_db_to_drop = db;
         for (auto i : db_array) {
             if (i == db + "_bak") {
                 target_db_to_restore = i;
-                has_orig = true;
-                has_bak = true;
             }
         }
     }
-    if (has_bak == true && has_orig == true) {
-        // Execute the drop &  restore.
+    if (!target_db_to_drop.empty() && !target_db_to_restore.empty()) {
+        // Execute the drop & restore.
         this->set_output_to("Dropping " + target_db_to_drop +
                             "\r\n& Restoring " + target_db_to_restore + "...");
         this->kick_sessions(target_db_to_drop);
@@ -311,8 +306,7 @@ void DbToolkit::on_btn_restoredb_clicked() {
         db_selector.set_active(active);
     } else {
         this->set_output_to(
-            "Could not determine both a _bak suffixed database, and a non-_bak "
-            "\r\n"
-            "suffixed database. Doing nothing");
+            "Could not determine both a _bak suffixed database, and a"
+            "non -_bak\r\nsuffixed database. Doing nothing");
     }
 }
