@@ -43,9 +43,9 @@ port = "5436"  # "5432"
 ## Screenshot
 ![preview-of-toolkit](./screenshot.png)
 ## Roadmap
-- Some gtk output tidyup, output is scuffed when we have multiple columns, and has no scrollbar.
+- Some gtk output tidyup, output is scuffed when we have multiple columns.
+- Output scrollwindow automatic expanding & contracting on content fill/removal.
 - Secure password storage in `~/.dbtoolkit.toml`?
-- Db drop/backup buttons should try to kick all active postgres sessions on the db
 - Extend field getter to show more useful information
 
 ## References

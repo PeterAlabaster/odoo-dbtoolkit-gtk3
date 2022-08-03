@@ -28,6 +28,9 @@ DbToolkit::DbToolkit()
     // High level window settings
     set_title("DBToolkit");
     set_border_width(10);
+    scrollwindow_output.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_ALWAYS);
+    // ROADMAP: Expand & contract min content height as content fills / unfills
+    scrollwindow_output.set_min_content_height(180);
     // TOML Configuration parse (~/.dbtoolkit.toml)
     // ROADMAP: Secure password storage
     homedir = getenv("HOME");
@@ -95,8 +98,9 @@ DbToolkit::DbToolkit()
     vbox.pack_start(btn_drop_db);
     vbox.pack_start(btn_restore_db);
     vbox.pack_start(hbox_output_header);
-    // ROADMAP: Set min value to trigger scroll? Instead of expanding window
-    vbox.pack_start(output);
+    vbox.pack_start(scrollwindow_output);
+    scrollwindow_output.add(output);
+    // vbox.pack_start(output);
     // Show everything
     show_all_children();
     // Populate the database list on init
@@ -158,6 +162,15 @@ auto DbToolkit::execute_query(Glib::ustring db, Glib::ustring query,
         result_str = e.what();
         return result_str;
     }
+}
+
+void DbToolkit::kick_sessions(Glib::ustring db) {
+    this->execute_query(
+        "postgres",
+        "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM "
+        "pg_stat_activity WHERE pg_stat_activity.datname = '" +
+            db + "' AND pid <> pg_backend_pid();",
+        false, false);
 }
 
 void DbToolkit::clear_output() { output.get_buffer()->set_text(""); }
@@ -223,9 +236,9 @@ void DbToolkit::on_btn_getfields_clicked() {
     this->set_output_to(result);
 }
 void DbToolkit::on_btn_bak_db_clicked() {
-    // ROADMAP: Kick all sessions first
     // Use postgres database, put db_selector db in query
     string db = db_selector.get_active_text();
+    this->kick_sessions(db);
     int active = db_selector.get_active_row_number();
     string result = this->execute_query(
         "postgres", "CREATE DATABASE " + db + "_bak WITH TEMPLATE " + db, false,
@@ -239,9 +252,9 @@ void DbToolkit::on_btn_bak_db_clicked() {
     db_selector.set_active(active);
 }
 void DbToolkit::on_btn_drop_db_clicked() {
-    // ROADMAP: Kick all sessions first
     // Use postgres database, put db_selector db in query
     string db = db_selector.get_active_text();
+    this->kick_sessions(db);
     string result =
         this->execute_query("postgres", "DROP DATABASE " + db, false, false);
     this->on_btn_updatedblist_clicked();
@@ -285,6 +298,7 @@ void DbToolkit::on_btn_restoredb_clicked() {
         // Execute the drop &  restore.
         this->set_output_to("Dropping " + target_db_to_drop +
                             "\r\n& Restoring " + target_db_to_restore + "...");
+        this->kick_sessions(target_db_to_drop);
         this->execute_query("postgres", "DROP DATABASE " + target_db_to_drop,
                             false, false);
         this->execute_query("postgres",
@@ -292,7 +306,8 @@ void DbToolkit::on_btn_restoredb_clicked() {
                                 " WITH TEMPLATE " + target_db_to_restore,
                             false, false);
         this->on_btn_updatedblist_clicked();
-        this->set_output_to("Finished");
+        this->set_output_to("Finished dropping " + target_db_to_drop +
+                            " and restoring " + target_db_to_restore);
         db_selector.set_active(active);
     } else {
         this->set_output_to(
