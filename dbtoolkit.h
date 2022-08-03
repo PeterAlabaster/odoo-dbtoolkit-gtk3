@@ -10,6 +10,7 @@
 #include <gtkmm/textview.h>
 #include <gtkmm/window.h>
 
+#include <pqxx/pqxx>
 #include <vector>
 
 #include "cpptoml.h"
@@ -21,6 +22,7 @@ class DbToolkit : public Gtk::Window {
 
    protected:
     // Helper functions
+    std::string format_query_result(pqxx::result R, bool single_column);
     auto execute_query(Glib::ustring db, Glib::ustring query,
                        bool transactional, bool single_column);
     void kick_sessions(Glib::ustring db);

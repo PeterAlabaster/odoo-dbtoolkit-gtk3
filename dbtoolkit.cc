@@ -2,11 +2,11 @@
 
 #include <stdlib.h>
 
+#include <iomanip>
 #include <iostream>
 #include <pqxx/pqxx>
 
 #include "cpptoml.h"
-
 using namespace std;
 using namespace pqxx;
 
@@ -28,7 +28,8 @@ DbToolkit::DbToolkit()
     // High level window settings
     set_title("DBToolkit");
     set_border_width(10);
-    scrollwindow_output.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_ALWAYS);
+    scrollwindow_output.set_policy(Gtk::POLICY_AUTOMATIC,
+                                   Gtk::POLICY_AUTOMATIC);
     // ROADMAP: Expand & contract min content height as content fills / unfills
     scrollwindow_output.set_min_content_height(180);
     // TOML Configuration parse (~/.dbtoolkit.toml)
@@ -109,6 +110,60 @@ DbToolkit::DbToolkit()
 
 DbToolkit::~DbToolkit() {}
 
+string DbToolkit::format_query_result(result R, bool single_column) {
+    string result_str;
+    if (single_column) {  // For db list, or extid
+        for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
+            string line_entry;
+            for (auto i : c) {
+                line_entry += i.as<string>();
+            }
+            result_str += line_entry + "\r\n";
+        }
+    } else {
+        vector<vector<string>> result_vec;
+        vector<int> max_col_sizes;
+        // Push all cells to an array of arrays (which are stored for later use)
+        for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
+            vector<string> result_line;  // Pushed into result_vec
+            string line_entry;
+            for (auto i : c) {
+                result_line.push_back(i.as<string>());
+            }
+            result_vec.push_back(result_line);
+        }
+        // Find the max column sizes by comparing indexes of lines vs last max
+        // There must be a nicer way to do this?
+        for (auto line : result_vec) {
+            for (int i = 0; i < line.size(); ++i) {
+                int cell_length = line[i].size();
+                if (i < max_col_sizes.size()) {
+                    if (max_col_sizes[i] < cell_length) {
+                        max_col_sizes[i] = cell_length;
+                    }
+                } else {  // We don't have one to compare, simply push
+                    max_col_sizes.push_back(cell_length);
+                }
+            }
+        }
+        // Now build a padded stringstream, taking into account the max sizes
+        // for each column
+        stringstream result_str_stream;
+        const char separator = ' ';
+        for (auto line : result_vec) {
+            for (int i = 0; i < line.size(); ++i) {
+                // + 1 to leave a space gap between largest cells
+                result_str_stream << left << setw(max_col_sizes[i] + 1)
+                                  << setfill(separator) << line[i];
+            }
+            result_str_stream << endl;
+        }
+        // Convert back to a string before returning.
+        result_str = result_str_stream.str();
+    }
+    return result_str;
+}
+
 auto DbToolkit::execute_query(Glib::ustring db, Glib::ustring query,
                               bool transactional, bool single_column) {
     string result_str;
@@ -133,23 +188,7 @@ auto DbToolkit::execute_query(Glib::ustring db, Glib::ustring query,
             nontransaction N(C);
             result R(N.exec(query));
             cout << "Executed non-transactional query: " << query << endl;
-            if (single_column) {  // For db list, or extid
-                for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
-                    string line_entry;
-                    for (auto i : c) {
-                        line_entry += i.as<string>();
-                    }
-                    result_str += line_entry + "\r\n";
-                }
-            } else {  // ROADMAP Pad stuff so it is easy to read in the output
-                for (result::const_iterator c = R.begin(); c != R.end(); ++c) {
-                    string line_entry;
-                    for (auto i : c) {
-                        line_entry += i.as<string>();
-                    }
-                    result_str += line_entry + "\r\n";
-                }
-            }
+            result_str = this->format_query_result(R, single_column);
             C.disconnect();
             return result_str;
         }
@@ -267,7 +306,6 @@ void DbToolkit::on_btn_restoredb_clicked() {
     int active = db_selector.get_active_row_number();
     string target_db_to_drop;
     string target_db_to_restore;
-    string result;
     bool has_suffix_bak =
         db.size() >= suffix.size() &&
         db.compare(db.size() - suffix.size(), suffix.size(), suffix) == 0;

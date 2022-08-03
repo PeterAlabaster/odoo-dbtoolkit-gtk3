@@ -43,7 +43,6 @@ port = "5436"  # "5432"
 ## Screenshot
 ![preview-of-toolkit](./screenshot.png)
 ## Roadmap (in order of priority)
-- Some gtk output tidyup, output is scuffed when we have multiple columns. Space columns evenly like you'd get in a psql shell.
 - Secure password storage in `~/.dbtoolkit.toml`?
 - Extend field getter to show more useful information
 - Output scrollwindow automatic expanding & contracting on content fill/removal.
